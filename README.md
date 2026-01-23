@@ -45,7 +45,7 @@ npm start
 
 To package the application for your platform:
 
--   **Linux**: `npm run build:linux` (Targets: AppImage, deb, rpm, pacman)
+-   **Linux**: `npm run build:linux` (Targets: AppImage, deb, rpm)
 -   **Windows**: `npm run build:win` (Targets: NSIS)
 -   **All Platforms**: `npm run build:all`
 

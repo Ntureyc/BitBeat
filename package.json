@@ -24,8 +24,7 @@
       "target": [
         "AppImage",
         "deb",
-        "rpm",
-        "pacman"
+        "rpm"
       ],
       "category": "Music"
     },
