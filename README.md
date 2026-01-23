@@ -2,7 +2,9 @@
 
 BitBeat is a premium, minimalist desktop music player built with **Electron**, **Tailwind CSS**, and modern web technologies. Designed for a sleek and distraction-free listening experience, it lets you enjoy your local music library with style.
 
-![Logo](logo.png)
+<p align="center">
+  <img src="logo.png" alt="BitBeat Logo" width="200">
+</p>
 
 ## ✨ Features
 
