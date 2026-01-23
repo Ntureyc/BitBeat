@@ -1,0 +1,49 @@
+{
+  "name": "bitbeat",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "main.js",
+  "description": "A stylish desktop music player built with Electron and Tailwind CSS.",
+  "author": "Ntureyc <mail@ntureyc.xyz>",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:css": "tailwindcss -i ./input.css -o ./style.css",
+    "build:win": "electron-builder --windows",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --windows --linux"
+  },
+  "build": {
+    "appId": "com.ntureyc.bitbeat",
+    "productName": "BitBeat",
+    "directories": {
+      "output": "dist"
+    },
+    "icon": "logo.png",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "pacman"
+      ],
+      "category": "Music"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ntureyc/BitBeat.git"
+  },
+  "devDependencies": {
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.11",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "tailwindcss": "^3.4.19"
+  }
+}
