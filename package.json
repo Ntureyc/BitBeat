@@ -1,6 +1,6 @@
 {
   "name": "bitbeat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "A stylish desktop music player built with Tauri and Tailwind CSS.",
   "author": "Ntureyc <mail@ntureyc.xyz>",
