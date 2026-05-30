@@ -9,11 +9,11 @@
     rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <script type="module" src="/main.js"></script>
 </head>
 
 <body class="bg-background-light dark:bg-background-dark font-display text-white selection:bg-primary/30">
-  <div id="title-bar">
+  <div id="title-bar" data-tauri-drag-region>
     <div class="app-title">BitBeat</div>
     <div id="window-controls">
       <div id="min-btn" class="window-control-btn">
@@ -33,7 +33,7 @@
       class="w-64 flex-shrink-0 bg-background-light dark:bg-background-dark border-r border-[#302839] flex flex-col">
       <div class="p-6">
         <div class="flex items-center gap-3 mb-8">
-          <img src="logo.png" alt="BitBeat Logo" class="w-10 h-10 object-contain" />
+          <img src="./logo.png" alt="BitBeat Logo" class="w-10 h-10 object-contain" />
           <h1 class="text-xl font-bold tracking-tight">BitBeat</h1>
         </div>
         <nav class="flex flex-col gap-1">
@@ -259,7 +259,6 @@
       </div>
     </div>
   </div>
-  <script src="renderer.js"></script>
 </body>
 
 </html>

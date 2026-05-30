@@ -1,4 +1,10 @@
-const { openDirectory, readDirectory, readFile, convertFileSrc, joinPath, checkPathExists, minimize, maximize, close } = window.electronAPI;
+import "./main.css";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+let appWindow;
+try { appWindow = getCurrentWindow(); } catch (e) { /* browser fallback */ }
 
 // State
 let currentView = 'home';
@@ -17,8 +23,9 @@ let likedSongs = JSON.parse(localStorage.getItem('likedSongs') || '[]');
 let addedFolders = JSON.parse(localStorage.getItem('addedFolders') || '[]');
 let playlists = JSON.parse(localStorage.getItem('playlists') || '{}');
 let trackToAddToPlaylist = null;
-let lastPlaylistContext = localStorage.getItem('lastPlaylistContext') || 'library'; // 'library', 'liked', or playlist name
+let lastPlaylistContext = localStorage.getItem('lastPlaylistContext') || 'library';
 let lastPlayedTrackPath = localStorage.getItem('lastPlayedTrackPath');
+let currentPlaylistName = '';
 
 // DOM Elements
 const audio = new Audio();
@@ -63,10 +70,9 @@ audio.volume = volume;
 init();
 
 async function init() {
-    // Validate folders on startup
     const validFolders = [];
     for (const folderPath of addedFolders) {
-        if (await checkPathExists(folderPath)) {
+        if (await invoke('check_path_exists', { dirPath: folderPath })) {
             validFolders.push(folderPath);
         }
     }
@@ -77,7 +83,6 @@ async function init() {
     }
 
     if (addedFolders.length > 0) {
-        // Find which folder/playlist to load
         const ctx = lastPlaylistContext;
         if (ctx === 'liked') {
             playlist = likedSongs;
@@ -87,12 +92,10 @@ async function init() {
             currentPlaylistName = ctx;
             currentView = 'custom-playlist';
         } else {
-            // Default to library/first folder
             await loadFolder(addedFolders[0]);
             currentView = 'home';
         }
 
-        // Restore last track index if path matches
         if (lastPlayedTrackPath && playlist.length > 0) {
             const idx = playlist.findIndex(t => t.path === lastPlayedTrackPath);
             if (idx !== -1) {
@@ -117,7 +120,7 @@ async function init() {
 let lastUIUpdate = 0;
 audio.addEventListener('timeupdate', () => {
     const now = Date.now();
-    if (now - lastUIUpdate > 100) { // Update UI at most 10 times per second
+    if (now - lastUIUpdate > 100) {
         progress = audio.currentTime;
         updateProgressUI();
         lastUIUpdate = now;
@@ -173,9 +176,10 @@ searchInput.addEventListener('input', (e) => {
     renderPlaylist();
 });
 
-minBtn.addEventListener('click', () => window.electronAPI.minimize());
-maxBtn.addEventListener('click', () => window.electronAPI.maximize());
-closeBtn.addEventListener('click', () => window.electronAPI.close());
+minBtn.addEventListener('click', () => appWindow.minimize());
+maxBtn.addEventListener('click', () => appWindow.toggleMaximize());
+closeBtn.addEventListener('click', () => appWindow.close());
+
 likedSongsBtn.addEventListener('click', () => {
     currentView = 'liked';
     renderLikedSongs();
@@ -227,14 +231,13 @@ function switchView(view) {
         viewPlaylist.classList.remove('hidden');
         likedSongsBtn.classList.add('bg-[#302839]', 'text-white');
     } else {
-        // Generic playlist view
         viewPlaylist.classList.remove('hidden');
     }
 }
 
 async function handlePickFolder() {
     try {
-        const selected = await openDirectory();
+        const selected = await open({ directory: true, multiple: false });
         if (selected) {
             if (!addedFolders.includes(selected)) {
                 addedFolders.push(selected);
@@ -255,7 +258,7 @@ async function validateFolders() {
     const validFolders = [];
     let changed = false;
     for (const folderPath of addedFolders) {
-        if (await checkPathExists(folderPath)) {
+        if (await invoke('check_path_exists', { dirPath: folderPath })) {
             validFolders.push(folderPath);
         } else {
             changed = true;
@@ -279,7 +282,7 @@ async function renderLibrary() {
         libraryGrid.classList.remove('hidden');
 
         let html = '';
-        addedFolders.forEach((folderPath, idx) => {
+        addedFolders.forEach((folderPath) => {
             const name = folderPath.split(/[/\\]/).filter(Boolean).pop() || "Local Folder";
             html += `
                 <div class="group cursor-pointer bg-[#302839]/20 hover:bg-[#302839]/40 p-5 rounded-3xl transition-all border border-white/5 hover:border-white/10" data-path="${folderPath}">
@@ -296,7 +299,6 @@ async function renderLibrary() {
         });
         libraryGrid.innerHTML = html;
 
-        // Event delegation
         libraryGrid.onclick = async (e) => {
             const item = e.target.closest('.group');
             if (item) {
@@ -309,7 +311,7 @@ async function renderLibrary() {
 }
 
 async function loadFolder(selected) {
-    if (!(await checkPathExists(selected))) {
+    if (!(await invoke('check_path_exists', { dirPath: selected }))) {
         await validateFolders();
         switchView('library');
         return;
@@ -318,11 +320,11 @@ async function loadFolder(selected) {
     folderName = name;
     playlistTitle.textContent = name;
 
-    const entries = await readDirectory(selected);
+    const entries = await invoke('read_directory', { dirPath: selected });
     const audioFiles = [];
     for (const entry of entries) {
-        if (entry.isFile && /\.(mp3|wav|m4a|ogg|webm|flac|aac)$/i.test(entry.name)) {
-            const fullPath = await joinPath(selected, entry.name);
+        if (entry.is_file && /\.(mp3|wav|m4a|ogg|webm|flac|aac)$/i.test(entry.name)) {
+            const fullPath = await invoke('join_path', { base: selected, part: entry.name });
             audioFiles.push({
                 name: entry.name.replace(/\.[^/.]+$/, ""),
                 path: fullPath,
@@ -342,6 +344,35 @@ async function loadFolder(selected) {
     }
 }
 
+let preloadedBlobUrl = null;
+let preloadedIndex = -1;
+const MIME_TYPES = {
+    'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+    'webm': 'audio/webm', 'flac': 'audio/flac', 'm4a': 'audio/mp4',
+    'aac': 'audio/aac', 'opus': 'audio/opus'
+};
+
+function getMime(path) {
+    return MIME_TYPES[path.toLowerCase().split('.').pop()] || 'audio/mpeg';
+}
+
+async function loadTrackBlob(track) {
+    const bytes = await invoke('read_file_bytes', { filePath: track.path });
+    const blob = new Blob([new Uint8Array(bytes)], { type: getMime(track.path) });
+    return URL.createObjectURL(blob);
+}
+
+async function preloadNext() {
+    if (playlist.length <= 1) return;
+    const nextIdx = (currentTrackIndex + 1) % playlist.length;
+    if (nextIdx === preloadedIndex && preloadedBlobUrl) return;
+    if (preloadedBlobUrl) { URL.revokeObjectURL(preloadedBlobUrl); preloadedBlobUrl = null; }
+    try {
+        preloadedBlobUrl = await loadTrackBlob(playlist[nextIdx]);
+        preloadedIndex = nextIdx;
+    } catch (e) { /* ignore preload errors */ }
+}
+
 async function playTrack(track, index) {
     if (!track) return;
     currentTrackIndex = index;
@@ -349,34 +380,18 @@ async function playTrack(track, index) {
     localStorage.setItem('lastPlaylistContext', currentView === 'custom-playlist' ? currentPlaylistName : currentView);
     showError(null);
 
-    if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-        blobUrl = null;
-    }
-
-    const ext = track.path.toLowerCase().split('.').pop();
-    const isWebm = ext === 'webm';
-
-    if (!isWebm) {
-        try {
-            const assetUrl = convertFileSrc(track.path);
-            audio.src = assetUrl;
-            await audio.play();
-            setPlaying(true);
-            updateFooterUI();
-            renderPlaylist();
-            return;
-        } catch (e) {
-            console.warn("Local Protocol failed, falling back to Blob:", e);
-        }
-    }
+    if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
 
     try {
-        showError(isWebm ? "Optimizing webm..." : "Loading...");
-        const fileData = await readFile(track.path);
-        const mimeType = getMimeType(track.path);
-        const blob = new Blob([fileData], { type: mimeType });
-        blobUrl = URL.createObjectURL(blob);
+        // Use preloaded blob if available
+        if (preloadedBlobUrl && preloadedIndex === index) {
+            blobUrl = preloadedBlobUrl;
+            preloadedBlobUrl = null;
+            preloadedIndex = -1;
+        } else {
+            if (preloadedBlobUrl) { URL.revokeObjectURL(preloadedBlobUrl); preloadedBlobUrl = null; }
+            blobUrl = await loadTrackBlob(track);
+        }
         audio.src = blobUrl;
         await audio.play();
         setPlaying(true);
@@ -386,6 +401,7 @@ async function playTrack(track, index) {
     }
     updateFooterUI();
     renderPlaylist();
+    preloadNext();
 }
 
 function togglePlay() {
@@ -397,7 +413,6 @@ function togglePlay() {
         if (currentTrackIndex === -1) {
             playTrack(playlist[0], 0);
         } else if (!audio.src || audio.src === '') {
-            // Fix for startup: if index is set but audio source isn't, initialize it
             playTrack(playlist[currentTrackIndex], currentTrackIndex);
         } else {
             audio.play();
@@ -445,7 +460,6 @@ function updateFooterUI() {
     const icon = document.getElementById('footer-track-icon');
     icon.textContent = currentTrack ? 'music_note' : 'music_off';
 
-    // Update like icon in footer
     const footerLikeBtn = document.getElementById('footer-like-btn');
     if (footerLikeBtn) {
         if (currentTrack) {
@@ -499,10 +513,10 @@ function renderTrackTable(tracks, contextPlaylist, isLikedView = false, isCustom
                 </td>
                 <td class="py-4 px-4 text-right">
                     <div class="flex items-center justify-end gap-2">
-                        ${isCustomView ?
-                '<span class="material-symbols-outlined remove-playlist-btn text-[#ab9db9] hover:text-red-400 text-lg cursor-pointer" title="Remove from playlist">delete</span>' :
-                '<span class="material-symbols-outlined add-playlist-btn text-[#ab9db9] hover:text-white text-lg cursor-pointer">add</span>'
-            }
+                        ${isCustomView
+                    ? '<span class="material-symbols-outlined remove-playlist-btn text-[#ab9db9] hover:text-red-400 text-lg cursor-pointer" title="Remove from playlist">delete</span>'
+                    : '<span class="material-symbols-outlined add-playlist-btn text-[#ab9db9] hover:text-white text-lg cursor-pointer">add</span>'
+                }
                         <span class="material-symbols-outlined like-btn ${isLiked ? 'text-primary filled-icon' : 'text-[#ab9db9] hover:text-white'} text-lg cursor-pointer">
                             favorite
                         </span>
@@ -608,15 +622,12 @@ function renderSidebarPlaylists() {
             renderCustomPlaylist(name);
             switchView('custom-playlist');
 
-            // UI state update for sidebar buttons
             document.querySelectorAll('aside nav button').forEach(b => b.classList.remove('bg-[#302839]', 'text-white'));
             btn.classList.add('bg-[#302839]', 'text-white');
         };
         playlistsContainer.appendChild(btn);
     });
 }
-
-let currentPlaylistName = '';
 
 function renderCustomPlaylist(name) {
     if (!playlists[name]) return;
@@ -672,7 +683,6 @@ function renderHome() {
         });
         recentGrid.innerHTML = html;
 
-        // Event delegation
         recentGrid.onclick = (e) => {
             const item = e.target.closest('.group');
             if (item) {
@@ -694,21 +704,6 @@ function formatTime(time) {
     const mins = Math.floor(time / 60);
     const secs = Math.floor(time % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function getMimeType(path) {
-    const ext = path.toLowerCase().split('.').pop();
-    const map = {
-        'mp3': 'audio/mpeg',
-        'wav': 'audio/wav',
-        'ogg': 'audio/ogg',
-        'webm': 'audio/webm',
-        'flac': 'audio/flac',
-        'm4a': 'audio/mp4',
-        'aac': 'audio/aac',
-        'opus': 'audio/opus'
-    };
-    return map[ext] || 'audio/mpeg';
 }
 
 function setCurrentTrack(index) {
